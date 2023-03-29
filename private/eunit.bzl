@@ -88,7 +88,9 @@ def _impl(ctx):
             test_env_commands.append("export {}=\"{}\"".format(k, v))
 
         output = ctx.actions.declare_file(ctx.label.name)
-        script = """set -euo pipefail
+        script = """#!/bin/bash
+        
+set -euo pipefail
 
 {maybe_install_erlang}
 
