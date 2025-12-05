@@ -2,23 +2,18 @@
 
 load(
     "%{RULES_ERLANG_WORKSPACE}//private:erlang_build.bzl",
-    "erlang_build",
+    "erlang_prebuilt",
 )
 load(
     "%{RULES_ERLANG_WORKSPACE}//tools:erlang_toolchain.bzl",
     "erlang_toolchain",
 )
 
-erlang_build(
+erlang_prebuilt(
     name = "otp-%{ERLANG_NAME}",
     version = "%{ERLANG_VERSION}",
     url = "%{URL}",
-    strip_prefix = "%{STRIP_PREFIX}",
     sha256v = "%{SHA_256}",
-    pre_configure_cmds = %{PRE_CONFIGURE_CMDS},
-    extra_configure_opts = %{EXTRA_CONFIGURE_OPTS},
-    post_configure_cmds = %{POST_CONFIGURE_CMDS},
-    extra_make_opts = %{EXTRA_MAKE_OPTS},
 )
 
 erlang_toolchain(
@@ -61,3 +56,4 @@ alias(
     actual = "toolchain_major_minor",
     visibility = ["//visibility:public"],
 )
+
