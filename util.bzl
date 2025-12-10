@@ -10,15 +10,6 @@ def path_join(*components):
             nec.append(c)
     return "/".join(nec)
 
-def windows_path(path):
-    for letter in _DRIVE_LETTERS:
-        prefix = "/%s/" % letter
-        if path.startswith(prefix):
-            return "%s:\\" % letter.upper() + path.removeprefix(
-                prefix,
-            ).replace("/", "\\")
-    return path.replace("/", "\\")
-
 def msys2_path(path):
     for letter in _DRIVE_LETTERS:
         for prefix in ["%s:" % letter.upper(), "%s:" % letter]:

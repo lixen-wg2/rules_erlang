@@ -5,7 +5,7 @@ load(
     "runfiles_path",
 )
 load("//:erlang_app_info.bzl", "ErlangAppInfo")
-load("//:util.bzl", "path_join", "windows_path")
+load("//:util.bzl", "path_join")
 load(":util.bzl", "erl_libs_contents")
 load(":ct.bzl", "code_paths", "unique_short_dirnames")
 
@@ -19,10 +19,8 @@ def _impl(ctx):
 
     if ctx.attr.plt == None:
         plt_args = "--build_plt"
-    elif not ctx.attr.is_windows:
-        plt_args = "--plt ${RUNFILES}/" + runfiles_path(ctx.file.plt) + " --no_check_plt"
     else:
-        plt_args = "--plt " + windows_path(ctx.file.plt.short_path) + " --no_check_plt"
+        plt_args = "--plt ${RUNFILES}/" + runfiles_path(ctx.file.plt) + " --no_check_plt"
 
     erl_libs_dir = ctx.label.name + "_deps"
 
@@ -42,9 +40,8 @@ def _impl(ctx):
     # Use short_path=True since this script runs at runtime (in runfiles)
     (erlang_home, _, runfiles) = erlang_dirs(ctx, short_path = True)
 
-    if not ctx.attr.is_windows:
-        output = ctx.actions.declare_file(ctx.label.name)
-        script = """\
+    output = ctx.actions.declare_file(ctx.label.name)
+    script = """\
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -73,39 +70,15 @@ set -x
     {plt_args} \\
     -r {dirs} {opts}{check_warnings}
 """.format(
-            maybe_install_erlang = maybe_install_erlang(ctx, short_path = True),
-            erlang_home = erlang_home,
-            erl_libs_path = erl_libs_path,
-            apps_args = apps_args,
-            plt_args = plt_args,
-            dirs = " ".join(dirs),
-            opts = " ".join(ctx.attr.dialyzer_opts),
-            check_warnings = " || test $? -eq 2" if not ctx.attr.warnings_as_errors else "",
-        )
-    else:
-        output = ctx.actions.declare_file(ctx.label.name + ".bat")
-        script = """
-if [{erl_libs_path}] == [] goto :dialyze
-REM TEST_SRCDIR is provided by bazel but with unix directory separators
-set ERL_LIBS=%TEST_SRCDIR%/%TEST_WORKSPACE%/{erl_libs_path}
-set ERL_LIBS=%ERL_LIBS:/=\\%
-:dialyze
-
-"{erlang_home}\\bin\\dialyzer" {apps_args} ^
-    {plt_args} ^
-    -r {dirs} {opts}
-if %ERRORLEVEL% EQU 0 EXIT /B 0
-{check_warnings}
-EXIT /B 1
-""".format(
-            erlang_home = windows_path(erlang_home),
-            erl_libs_path = erl_libs_path,
-            apps_args = apps_args,
-            plt_args = plt_args,
-            dirs = " ".join(dirs),
-            opts = " ".join(ctx.attr.dialyzer_opts),
-            check_warnings = "if %ERRORLEVEL% EQU 2 EXIT /B 0" if not ctx.attr.warnings_as_errors else "",
-        ).replace("\n", "\r\n")
+        maybe_install_erlang = maybe_install_erlang(ctx, short_path = True),
+        erlang_home = erlang_home,
+        erl_libs_path = erl_libs_path,
+        apps_args = apps_args,
+        plt_args = plt_args,
+        dirs = " ".join(dirs),
+        opts = " ".join(ctx.attr.dialyzer_opts),
+        check_warnings = " || test $? -eq 2" if not ctx.attr.warnings_as_errors else "",
+    )
 
     ctx.actions.write(
         output = output,
@@ -124,7 +97,6 @@ EXIT /B 1
 dialyze_test = rule(
     implementation = _impl,
     attrs = {
-        "is_windows": attr.bool(mandatory = True),
         "plt": attr.label(
             allow_single_file = [".plt"],
         ),
