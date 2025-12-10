@@ -25,7 +25,8 @@ def _impl(ctx):
 
     erl_libs_path = path_join(package, erl_libs_dir)
 
-    (erlang_home, _, runfiles) = erlang_dirs(ctx)
+    # Use short_path=True since this script runs at runtime (in runfiles)
+    (erlang_home, _, erlang_runfiles) = erlang_dirs(ctx, short_path = True)
 
     if not ctx.attr.is_windows:
         output = ctx.actions.declare_file(ctx.label.name)
@@ -33,12 +34,24 @@ def _impl(ctx):
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Find the runfiles directory
+if [[ -n "${{RUNFILES_DIR:-}}" ]]; then
+    RUNFILES="${{RUNFILES_DIR}}"
+elif [[ -d "$0.runfiles" ]]; then
+    RUNFILES="$0.runfiles"
+elif [[ -d "${{BASH_SOURCE[0]}}.runfiles" ]]; then
+    RUNFILES="${{BASH_SOURCE[0]}}.runfiles"
+else
+    echo "ERROR: Cannot find runfiles directory" >&2
+    exit 1
+fi
+
 {maybe_install_erlang}
 
 export ERL_LIBS=$PWD/{erl_libs_path}
 
 set -x
-"{erlang_home}"/bin/erl {extra_erl_args} $@
+"${{RUNFILES}}/{erlang_home}"/bin/erl {extra_erl_args} $@
 """.format(
             maybe_install_erlang = maybe_install_erlang(ctx, short_path = True),
             erlang_home = erlang_home,
@@ -67,7 +80,7 @@ echo on
     runfiles = ctx.runfiles(
         files = ctx.files.data,
         transitive_files = depset(erl_libs_files),
-    )
+    ).merge(erlang_runfiles)
 
     return [DefaultInfo(
         runfiles = runfiles,

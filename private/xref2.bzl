@@ -18,6 +18,7 @@ load(
     "//tools:erlang_toolchain.bzl",
     "erlang_dirs",
     "maybe_install_erlang",
+    "runfiles_path",
 )
 
 def replace_all(s, substitutions):
@@ -101,13 +102,26 @@ def _impl(ctx):
         arg = to_erlang_atom_list(ctx.attr.checks),
     )
 
-    (erlang_home, _, runfiles) = erlang_dirs(ctx)
+    # Use short_path=True since this script runs at runtime (in runfiles)
+    (erlang_home, _, runfiles) = erlang_dirs(ctx, short_path = True)
 
     if not ctx.attr.is_windows:
         output = ctx.actions.declare_file(ctx.label.name)
         script = """\
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Find the runfiles directory
+if [[ -n "${{RUNFILES_DIR:-}}" ]]; then
+    RUNFILES="${{RUNFILES_DIR}}"
+elif [[ -d "$0.runfiles" ]]; then
+    RUNFILES="$0.runfiles"
+elif [[ -d "${{BASH_SOURCE[0]}}.runfiles" ]]; then
+    RUNFILES="${{BASH_SOURCE[0]}}.runfiles"
+else
+    echo "ERROR: Cannot find runfiles directory" >&2
+    exit 1
+fi
 
 {maybe_install_erlang}
 
@@ -118,7 +132,7 @@ if [ -n "{package}" ]; then
     cd {package}
 fi
 
-"{erlang_home}"/bin/erl \\
+"${{RUNFILES}}/{erlang_home}"/bin/erl \\
     -noshell \\
     -eval "{xref_erl}" \\
     -pa ebin/
@@ -204,13 +218,26 @@ def _query_impl(ctx):
         arg = "\"$QUERY\"",
     )
 
-    (erlang_home, _, runfiles) = erlang_dirs(ctx)
+    # Use short_path=True since this script runs at runtime (in runfiles)
+    (erlang_home, _, runfiles) = erlang_dirs(ctx, short_path = True)
 
     if not ctx.attr.is_windows:
         output = ctx.actions.declare_file(ctx.label.name)
         script = """\
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Find the runfiles directory
+if [[ -n "${{RUNFILES_DIR:-}}" ]]; then
+    RUNFILES="${{RUNFILES_DIR}}"
+elif [[ -d "$0.runfiles" ]]; then
+    RUNFILES="$0.runfiles"
+elif [[ -d "${{BASH_SOURCE[0]}}.runfiles" ]]; then
+    RUNFILES="${{BASH_SOURCE[0]}}.runfiles"
+else
+    echo "ERROR: Cannot find runfiles directory" >&2
+    exit 1
+fi
 
 {maybe_install_erlang}
 
@@ -222,7 +249,7 @@ fi
 
 export QUERY="$1"
 
-"{erlang_home}"/bin/erl \\
+"${{RUNFILES}}/{erlang_home}"/bin/erl \\
     -noshell \\
     -eval "{xref_erl}" \\
     -pa ebin/

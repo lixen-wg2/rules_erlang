@@ -10,6 +10,7 @@ load(
     "//tools:erlang_toolchain.bzl",
     "erlang_dirs",
     "maybe_install_erlang",
+    "runfiles_path",
 )
 
 def _impl(ctx):
@@ -28,10 +29,11 @@ def _impl(ctx):
         for dep in app_info.direct_deps
     ]
 
-    (erlang_home, _, runfiles) = erlang_dirs(ctx)
+    # Use short_path=True since this script runs at runtime (in runfiles)
+    (erlang_home, _, runfiles) = erlang_dirs(ctx, short_path = True)
 
     assert_applications = ctx.attr.assert_applications
-    assert_applications_path = assert_applications[DefaultInfo].files_to_run.executable.short_path
+    assert_applications_path = runfiles_path(assert_applications[DefaultInfo].files_to_run.executable)
 
     if not ctx.attr.is_windows:
         output = ctx.actions.declare_file(ctx.label.name)
@@ -39,16 +41,28 @@ def _impl(ctx):
 
 set -euo pipefail
 
+# Find the runfiles directory
+if [[ -n "${{RUNFILES_DIR:-}}" ]]; then
+    RUNFILES="${{RUNFILES_DIR}}"
+elif [[ -d "$0.runfiles" ]]; then
+    RUNFILES="$0.runfiles"
+elif [[ -d "${{BASH_SOURCE[0]}}.runfiles" ]]; then
+    RUNFILES="${{BASH_SOURCE[0]}}.runfiles"
+else
+    echo "ERROR: Cannot find runfiles directory" >&2
+    exit 1
+fi
+
 {maybe_install_erlang}
 
-"{erlang_home}"/bin/escript {assert_applications} \\
-    "{app_file}" \\
+"${{RUNFILES}}/{erlang_home}"/bin/escript "${{RUNFILES}}/{assert_applications}" \\
+    "${{RUNFILES}}/{app_file}" \\
     {expected}
 """.format(
             maybe_install_erlang = maybe_install_erlang(ctx, short_path = True),
             erlang_home = erlang_home,
             assert_applications = assert_applications_path,
-            app_file = app_file.short_path,
+            app_file = runfiles_path(app_file),
             expected = " ".join(expected_apps),
         )
     else:

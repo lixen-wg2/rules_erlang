@@ -16,6 +16,7 @@ load(
     "//tools:erlang_toolchain.bzl",
     "erlang_dirs",
     "maybe_install_erlang",
+    "runfiles_path",
 )
 load(
     ":eunit.bzl",
@@ -102,13 +103,14 @@ def _impl(ctx):
                     "ebin",
                 ))
 
-    (erlang_home, _, runfiles) = erlang_dirs(ctx)
+    # Use short_path=True since this script runs at runtime (in runfiles)
+    (erlang_home, _, runfiles) = erlang_dirs(ctx, short_path = True)
 
     shard_suite = ctx.attr.shard_suite
-    shard_suite_path = shard_suite[DefaultInfo].files_to_run.executable.short_path
+    shard_suite_path = runfiles_path(shard_suite[DefaultInfo].files_to_run.executable)
 
     coverdata_to_lcov = ctx.attr.coverdata_to_lcov
-    coverdata_to_lcov_path = coverdata_to_lcov[DefaultInfo].files_to_run.executable.short_path
+    coverdata_to_lcov_path = runfiles_path(coverdata_to_lcov[DefaultInfo].files_to_run.executable)
 
     if not ctx.attr.is_windows:
         test_env_commands = []
@@ -121,6 +123,18 @@ def _impl(ctx):
         script = """\
 #!/usr/bin/env bash
 set -eo pipefail
+
+# Find the runfiles directory
+if [[ -n "${{RUNFILES_DIR:-}}" ]]; then
+    RUNFILES="${{RUNFILES_DIR}}"
+elif [[ -d "$0.runfiles" ]]; then
+    RUNFILES="$0.runfiles"
+elif [[ -d "${{BASH_SOURCE[0]}}.runfiles" ]]; then
+    RUNFILES="${{BASH_SOURCE[0]}}.runfiles"
+else
+    echo "ERROR: Cannot find runfiles directory" >&2
+    exit 1
+fi
 
 {maybe_install_erlang}
 
@@ -162,8 +176,8 @@ if [ -n "${{FOCUS+x}}" ]; then
 else
     if [ -n "${{SHARDING+x}}" ]; then
         export SHARD_SUITE_CODE_PATHS="$TEST_SRCDIR/$TEST_WORKSPACE/{dir}"
-        FILTER=$("{erlang_home}"/bin/escript \\
-            $TEST_SRCDIR/$TEST_WORKSPACE/{shard_suite} \\
+        FILTER=$("${{RUNFILES}}/{erlang_home}"/bin/escript \\
+            "${{RUNFILES}}/{shard_suite}" \\
                 -{sharding_method} \\
                 {suite_name} \\
                 ${{TEST_SHARD_INDEX}} \\
@@ -180,7 +194,7 @@ fi
 mkdir -p "{log_dir}"
 
 set -x
-"{erlang_home}"/bin/ct_run \\
+"${{RUNFILES}}/{erlang_home}"/bin/ct_run \\
     -no_auto_compile \\
     -noinput \\
     ${{FILTER}} \\
@@ -190,7 +204,7 @@ set -x
     -sname {sname} ${{COVER_ARGS}} {extra_args}
 set +x
 if [ -n "${{COVERAGE}}" ]; then
-    "{erlang_home}"/bin/escript $TEST_SRCDIR/$TEST_WORKSPACE/{coverdata_to_lcov} \\
+    "${{RUNFILES}}/{erlang_home}"/bin/escript "${{RUNFILES}}/{coverdata_to_lcov}" \\
         ${{COVERAGE_OUTPUT_FILE}} \\
         ${{COVERAGE_OUTPUT_FILE}} \\
         > ${{TEST_UNDECLARED_OUTPUTS_DIR}}/coverdata_to_lcov.log

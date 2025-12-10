@@ -87,6 +87,7 @@ def _impl(ctx):
 
     args.add_all(ctx.attr.dialyzer_opts)
 
+    # This is a build-time action (run_shell), so use default path (not short_path)
     (erlang_home, _, runfiles) = erlang_dirs(ctx)
 
     script = """\

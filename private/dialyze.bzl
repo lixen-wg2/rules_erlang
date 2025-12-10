@@ -2,6 +2,7 @@ load(
     "//tools:erlang_toolchain.bzl",
     "erlang_dirs",
     "maybe_install_erlang",
+    "runfiles_path",
 )
 load("//:erlang_app_info.bzl", "ErlangAppInfo")
 load("//:util.bzl", "path_join", "windows_path")
@@ -19,7 +20,7 @@ def _impl(ctx):
     if ctx.attr.plt == None:
         plt_args = "--build_plt"
     elif not ctx.attr.is_windows:
-        plt_args = "--plt " + ctx.file.plt.short_path + " --no_check_plt"
+        plt_args = "--plt ${RUNFILES}/" + runfiles_path(ctx.file.plt) + " --no_check_plt"
     else:
         plt_args = "--plt " + windows_path(ctx.file.plt.short_path) + " --no_check_plt"
 
@@ -38,13 +39,26 @@ def _impl(ctx):
     dirs = code_paths(ctx.attr.target)
     dirs.extend(unique_short_dirnames(ctx.files.beam))
 
-    (erlang_home, _, runfiles) = erlang_dirs(ctx)
+    # Use short_path=True since this script runs at runtime (in runfiles)
+    (erlang_home, _, runfiles) = erlang_dirs(ctx, short_path = True)
 
     if not ctx.attr.is_windows:
         output = ctx.actions.declare_file(ctx.label.name)
         script = """\
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Find the runfiles directory
+if [[ -n "${{RUNFILES_DIR:-}}" ]]; then
+    RUNFILES="${{RUNFILES_DIR}}"
+elif [[ -d "$0.runfiles" ]]; then
+    RUNFILES="$0.runfiles"
+elif [[ -d "${{BASH_SOURCE[0]}}.runfiles" ]]; then
+    RUNFILES="${{BASH_SOURCE[0]}}.runfiles"
+else
+    echo "ERROR: Cannot find runfiles directory" >&2
+    exit 1
+fi
 
 {maybe_install_erlang}
 
@@ -55,7 +69,7 @@ if [ -n "{erl_libs_path}" ]; then
 fi
 
 set -x
-"{erlang_home}"/bin/dialyzer {apps_args} \\
+"${{RUNFILES}}/{erlang_home}"/bin/dialyzer {apps_args} \\
     {plt_args} \\
     -r {dirs} {opts}{check_warnings}
 """.format(

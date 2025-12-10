@@ -11,6 +11,7 @@ load(
     "//tools:erlang_toolchain.bzl",
     "erlang_dirs",
     "maybe_install_erlang",
+    "runfiles_path",
 )
 load(
     ":util.bzl",
@@ -85,12 +86,13 @@ def _impl(ctx):
                     "ebin",
                 ))
 
-    (erlang_home, _, runfiles) = erlang_dirs(ctx)
+    # Use short_path=True since this script runs at runtime (in runfiles)
+    (erlang_home, _, runfiles) = erlang_dirs(ctx, short_path = True)
 
     eunit_opts_term = "[" + ",".join(ctx.attr.eunit_opts) + "]"
 
     coverdata_to_lcov = ctx.attr.coverdata_to_lcov
-    coverdata_to_lcov_path = coverdata_to_lcov[DefaultInfo].files_to_run.executable.short_path
+    coverdata_to_lcov_path = runfiles_path(coverdata_to_lcov[DefaultInfo].files_to_run.executable)
 
     if not ctx.attr.is_windows:
         test_env_commands = []
@@ -101,6 +103,18 @@ def _impl(ctx):
         script = """\
 #!/usr/bin/env bash
 set -eo pipefail
+
+# Find the runfiles directory
+if [[ -n "${{RUNFILES_DIR:-}}" ]]; then
+    RUNFILES="${{RUNFILES_DIR}}"
+elif [[ -d "$0.runfiles" ]]; then
+    RUNFILES="$0.runfiles"
+elif [[ -d "${{BASH_SOURCE[0]}}.runfiles" ]]; then
+    RUNFILES="${{BASH_SOURCE[0]}}.runfiles"
+else
+    echo "ERROR: Cannot find runfiles directory" >&2
+    exit 1
+fi
 
 {maybe_install_erlang}
 
@@ -122,12 +136,12 @@ if [ -n "${{COVERAGE}}" ]; then
     COVER_POST="cover:export(\\"${{COVERAGE_OUTPUT_FILE}}\\"), "
 fi
 set -x
-"{erlang_home}"/bin/erl +A1 -noinput -boot no_dot_erlang \\
+"${{RUNFILES}}/{erlang_home}"/bin/erl +A1 -noinput -boot no_dot_erlang \\
     {extra_args} \\
     -eval "${{COVER_PRE}}case eunit:test({eunit_mods_term},{eunit_opts_term}) of ok -> ok; error -> halt(2) end, ${{COVER_POST}}halt()."
 set +x
 if [ -n "${{COVERAGE}}" ]; then
-    "{erlang_home}"/bin/escript $TEST_SRCDIR/$TEST_WORKSPACE/{coverdata_to_lcov} \\
+    "${{RUNFILES}}/{erlang_home}"/bin/escript "${{RUNFILES}}/{coverdata_to_lcov}" \\
         ${{COVERAGE_OUTPUT_FILE}} \\
         ${{COVERAGE_OUTPUT_FILE}} \\
         > ${{TEST_UNDECLARED_OUTPUTS_DIR}}/coverdata_to_lcov.log

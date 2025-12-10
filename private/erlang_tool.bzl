@@ -9,15 +9,29 @@ DEFAULT_PATH = "bin/erl"
 def _impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name)
 
-    (erlang_home, _, runfiles) = erlang_dirs(ctx)
+    # Use short_path=True since this script runs at runtime (in runfiles)
+    (erlang_home, _, runfiles) = erlang_dirs(ctx, short_path = True)
 
     ctx.actions.write(
         output = out,
-        content = """set -euo pipefail
+        content = """#!/usr/bin/env bash
+set -euo pipefail
+
+# Find the runfiles directory
+if [[ -n "${{RUNFILES_DIR:-}}" ]]; then
+    RUNFILES="${{RUNFILES_DIR}}"
+elif [[ -d "$0.runfiles" ]]; then
+    RUNFILES="$0.runfiles"
+elif [[ -d "${{BASH_SOURCE[0]}}.runfiles" ]]; then
+    RUNFILES="${{BASH_SOURCE[0]}}.runfiles"
+else
+    echo "ERROR: Cannot find runfiles directory" >&2
+    exit 1
+fi
 
 {maybe_install_erlang}
 
-exec "{erlang_home}"/{path} $@
+exec "${{RUNFILES}}/{erlang_home}"/{path} $@
 """.format(
             maybe_install_erlang = maybe_install_erlang(ctx, short_path = True),
             erlang_home = erlang_home,

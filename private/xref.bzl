@@ -14,6 +14,7 @@ load(
     "//tools:erlang_toolchain.bzl",
     "erlang_dirs",
     "maybe_install_erlang",
+    "runfiles_path",
 )
 
 def _impl(ctx):
@@ -44,10 +45,12 @@ def _impl(ctx):
         content = xref_config,
     )
 
-    (erlang_home, _, runfiles) = erlang_dirs(ctx)
+    # Use short_path=True since this script runs at runtime (in runfiles)
+    (erlang_home, _, runfiles) = erlang_dirs(ctx, short_path = True)
 
     xrefr = ctx.attr.xrefr
-    xrefr_path = xrefr[DefaultInfo].files_to_run.executable.short_path
+    xrefr_path = runfiles_path(xrefr[DefaultInfo].files_to_run.executable)
+    config_path = runfiles_path(config_file)
 
     if not ctx.attr.is_windows:
         output = ctx.actions.declare_file(ctx.label.name)
@@ -55,22 +58,34 @@ def _impl(ctx):
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Find the runfiles directory
+if [[ -n "${{RUNFILES_DIR:-}}" ]]; then
+    RUNFILES="${{RUNFILES_DIR}}"
+elif [[ -d "$0.runfiles" ]]; then
+    RUNFILES="$0.runfiles"
+elif [[ -d "${{BASH_SOURCE[0]}}.runfiles" ]]; then
+    RUNFILES="${{BASH_SOURCE[0]}}.runfiles"
+else
+    echo "ERROR: Cannot find runfiles directory" >&2
+    exit 1
+fi
+
 {maybe_install_erlang}
 
 export HOME=${{TEST_TMPDIR}}
 
-"{erlang_home}"/bin/erl \\
-    -eval '{{ok, [C]}} = file:consult("{config_path}"), io:format("~p~n", [C]), halt().' \\
+"${{RUNFILES}}/{erlang_home}"/bin/erl \\
+    -eval '{{ok, [C]}} = file:consult("${{RUNFILES}}/{config_path}"), io:format("~p~n", [C]), halt().' \\
     -noshell
 
 set -x
-"{erlang_home}"/bin/escript {xrefr} \\
-    --config {config_path}
+"${{RUNFILES}}/{erlang_home}"/bin/escript "${{RUNFILES}}/{xrefr}" \\
+    --config "${{RUNFILES}}/{config_path}"
 """.format(
             maybe_install_erlang = maybe_install_erlang(ctx, short_path = True),
             erlang_home = erlang_home,
             xrefr = xrefr_path,
-            config_path = config_file.short_path,
+            config_path = config_path,
         )
     else:
         output = ctx.actions.declare_file(ctx.label.name + ".bat")
