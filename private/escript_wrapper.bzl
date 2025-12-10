@@ -31,7 +31,14 @@ fi
 {maybe_install_erlang}
 
 # Resolve ERLANG_HOME to an absolute path for consistent path matching
-ABS_ERLANG_HOME=$(cd "${{RUNFILES}}/{erlang_home}" && pwd)
+# Handle both relative (internal/prebuilt) and absolute (external) Erlang paths
+if [[ "{erlang_home}" = /* ]]; then
+    # External Erlang: erlang_home is already an absolute path
+    ABS_ERLANG_HOME="{erlang_home}"
+else
+    # Internal/prebuilt Erlang: erlang_home is relative to runfiles
+    ABS_ERLANG_HOME=$(cd "${{RUNFILES}}/{erlang_home}" && pwd)
+fi
 
 exec \\
     env ERLANG_HOME="${{ABS_ERLANG_HOME}}" \\

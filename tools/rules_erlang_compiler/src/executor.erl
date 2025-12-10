@@ -445,20 +445,50 @@ resolve_module(Module, Targets, CodePaths, ModuleIndex) ->
         _ ->
             case code:where_is_file(atom_to_list(Module) ++ ".beam") of
                 non_existing ->
-                    io:format(
-                        standard_error,
-                        "Could not locate source for module ~p.~n",
-                        [Module]
-                    ),
-                    {warning, {module_not_found, Module}};
+                    %% Not on explicit code path - try loading to see if it's an OTP module
+                    case code:ensure_loaded(Module) of
+                        {module, Module} ->
+                            %% Module loaded successfully, check if it's from OTP
+                            case code:which(Module) of
+                                preloaded ->
+                                    ok;
+                                cover_compiled ->
+                                    ok;
+                                ModPath when is_list(ModPath) ->
+                                    case is_otp_module_path(ModPath) of
+                                        true -> ok;
+                                        false ->
+                                            io:format(
+                                                standard_error,
+                                                "Could not locate source for module ~p.~n",
+                                                [Module]
+                                            ),
+                                            {warning, {module_not_found, Module}}
+                                    end
+                            end;
+                        {error, _} ->
+                            io:format(
+                                standard_error,
+                                "Could not locate source for module ~p.~n",
+                                [Module]
+                            ),
+                            {warning, {module_not_found, Module}}
+                    end;
                 Path ->
                     case string:prefix(Path, os:getenv("ERLANG_HOME")) of
                         nomatch ->
-                            case find_in_code_paths(Path, CodePaths) of
-                                error ->
-                                    {warning, {module_not_found, Module}};
-                                ModuleSrc ->
-                                    {ok, ModuleSrc}
+                            case is_otp_module_path(Path) of
+                                true ->
+                                    %% OTP module path that doesn't match ERLANG_HOME
+                                    %% (can happen with Bazel sandbox paths). Suppress.
+                                    ok;
+                                false ->
+                                    case find_in_code_paths(Path, CodePaths) of
+                                        error ->
+                                            {warning, {module_not_found, Module}};
+                                        ModuleSrc ->
+                                            {ok, ModuleSrc}
+                                    end
                             end;
                         _ ->
                             %% we could stick the atom in the deps,
@@ -526,34 +556,42 @@ resolve_include(Src, Include, IncludePaths, Target, CodePaths) ->
         _ ->
             case string:prefix(Include, os:getenv("ERLANG_HOME")) of
                 nomatch ->
-                    %% fall back to checking the code path here
-                    %% it seems epp sometimes converts -include_lib to -include
-                    %% code paths are relative, so if a codepath is part of this
-                    %% file, assume it's the IncludeSrc, (and the prefix must
-                    %% be stripped from the IncludeSrc
-                    CodePathParents = lists:map(
-                        fun(P) ->
-                            filename:dirname(P) ++ "/"
-                        end,
-                        CodePaths
-                    ),
-                    case
-                        lists:search(
-                            fun(CP) ->
-                                case string:split(Include, CP) of
-                                    [_] -> false;
-                                    [_, _] -> true
-                                end
-                            end,
-                            CodePathParents
-                        )
-                    of
-                        {value, CP} ->
-                            [_, RP] = string:split(Include, CP),
-                            IncludeSrc = filename:join(CP, RP),
-                            {ok, IncludeSrc};
-                        _ ->
-                            {warning, {include_not_found, Include, CodePaths}}
+                    case is_otp_include_path(Include) of
+                        true ->
+                            %% This is an OTP include path that doesn't match ERLANG_HOME
+                            %% exactly (can happen with Bazel sandbox paths). Suppress
+                            %% the warning since erlc will find it.
+                            ok;
+                        false ->
+                            %% fall back to checking the code path here
+                            %% it seems epp sometimes converts -include_lib to -include
+                            %% code paths are relative, so if a codepath is part of this
+                            %% file, assume it's the IncludeSrc, (and the prefix must
+                            %% be stripped from the IncludeSrc
+                            CodePathParents = lists:map(
+                                fun(P) ->
+                                    filename:dirname(P) ++ "/"
+                                end,
+                                CodePaths
+                            ),
+                            case
+                                lists:search(
+                                    fun(CP) ->
+                                        case string:split(Include, CP) of
+                                            [_] -> false;
+                                            [_, _] -> true
+                                        end
+                                    end,
+                                    CodePathParents
+                                )
+                            of
+                                {value, CP} ->
+                                    [_, RP] = string:split(Include, CP),
+                                    IncludeSrc = filename:join(CP, RP),
+                                    {ok, IncludeSrc};
+                                _ ->
+                                    {warning, {include_not_found, Include, CodePaths}}
+                            end
                     end;
                 _ ->
                     %% it's unclear to me, if an app loads an otp header, should
@@ -561,6 +599,26 @@ resolve_include(Src, Include, IncludePaths, Target, CodePaths) ->
                     %% would appear to be more of a runtime thing
                     ok
             end
+    end.
+
+%% Check if the path looks like an OTP include path.
+%% OTP includes have a structure like: .../lib/<app>-<version>/include/<file>.hrl
+%% This handles cases where ERLANG_HOME doesn't exactly match the resolved path
+%% (e.g., in Bazel sandbox environments).
+-spec is_otp_include_path(string()) -> boolean().
+is_otp_include_path(Path) ->
+    case re:run(Path, "/lib/[a-z_]+-[0-9.]+/include/[^/]+\\.hrl$", [{capture, none}]) of
+        match -> true;
+        nomatch -> false
+    end.
+
+%% Check if the path looks like an OTP module path.
+%% OTP modules have a structure like: .../lib/<app>-<version>/ebin/<module>.beam
+-spec is_otp_module_path(string()) -> boolean().
+is_otp_module_path(Path) ->
+    case re:run(Path, "/lib/[a-z_]+-[0-9.]+/ebin/[^/]+\\.beam$", [{capture, none}]) of
+        match -> true;
+        nomatch -> false
     end.
 
 string_ends_with(String, Suffix) ->

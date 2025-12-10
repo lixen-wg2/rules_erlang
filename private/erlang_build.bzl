@@ -273,6 +273,7 @@ curl -L "{archive_url}" -o {archive_path}
     sha256file = sha256(ctx, downloaded_archive)
 
     # Extract directly to the output directory
+    # The prebuilt archive from omnicate/erlang-linux-builds has no prefix directory
     ctx.actions.run_shell(
         inputs = [downloaded_archive, sha256file],
         outputs = [release_dir, version_file],
