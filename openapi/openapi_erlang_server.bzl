@@ -23,6 +23,7 @@ load(
     "maybe_install_erlang",
 )
 load("//private:util.bzl", "erl_libs_contents")
+load("@rules_java//java/common/rules:java_runtime.bzl", "JavaRuntimeInfo")
 
 def _impl(ctx):
     spec_file = ctx.file.spec
@@ -37,7 +38,7 @@ def _impl(ctx):
         java_runtime_files = []
     elif ctx.attr._jdk:
         # Use Java toolchain
-        java_runtime = ctx.attr._jdk[java_common.JavaRuntimeInfo]
+        java_runtime = ctx.attr._jdk[JavaRuntimeInfo]
         java_path = "%s/bin/java" % java_runtime.java_home
         java_runtime_files = ctx.attr._jdk.files.to_list()
     else:
@@ -296,7 +297,7 @@ openapi_erlang_server = rule(
         ),
         "_jdk": attr.label(
             default = Label("@bazel_tools//tools/jdk:current_host_java_runtime"),
-            providers = [java_common.JavaRuntimeInfo],
+            providers = [JavaRuntimeInfo],
             doc = "Java runtime toolchain for running openapi-generator-cli.jar at build time.",
         ),
         "deps": attr.label_list(
